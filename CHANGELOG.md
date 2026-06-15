@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   back to the heuristic summary (no score) and never throws. Driven by `Settings::get`
   / `Settings::llm_client` and the new `Prompts` builders.
 
+- **AI core — the Scorer ranks by LLM relevance + recency + source.** When an item
+  carries the Summarizer's `relevance_score`, the final score is
+  `relevance × weight + recency_bonus(timestamp) + source_weight` (7-day half-life
+  exponential recency decay); when it doesn't (Summarizer fell back), the existing
+  keyword/source heuristic is used. No LLM call — purely deterministic.
+
 - **Foundation of the `newspack-ai-newsletter` sibling plugin** — a team-intelligence
   digest built on the newspack-nodes substrate. This initial drop is the runnable
   pipeline skeleton + the shared seams; live sources, real LLM wiring, the dashboard,
