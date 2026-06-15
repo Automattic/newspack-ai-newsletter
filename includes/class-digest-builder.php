@@ -19,6 +19,19 @@ class Digest_Builder_Node extends Node {
 	/** @var array<int,array<array-key,mixed>> Accumulated summarized items (array-key: they round-trip through offsetlog JSON). */
 	private array $items = [];
 
+	/**
+	 * LLM-client factory seam. Lazily-defaulted at the call site to
+	 * `Settings::llm_client()` (null when no proxy token is configured). Tests
+	 * reassign in setUp to inject a real `Proxy_LLM_Client` — faking only its
+	 * `$http_post` seam — so prompt assembly, the client, and the briefing compose
+	 * all run as real, covered production code; tearDown resets it to null.
+	 *
+	 * Signature: `function (): ?LLM_Client`.
+	 *
+	 * @var (\Closure(): ?LLM_Client)|null
+	 */
+	public static ?\Closure $llm_factory = null;
+
 	/** Wire the sibling {name}:config interpreter so the `flush` verb is dispatchable. */
 	public function __construct() {
 		parent::__construct();
@@ -40,14 +53,24 @@ class Digest_Builder_Node extends Node {
 		++$this->counter;
 	}
 
-	/** `flush` handler: render accumulated summaries to markdown, emit, clear. */
+	/** `flush` handler: compose an LLM briefing (ranked-list fallback), emit, clear. */
 	public function cmd_flush(): string {
-		$lines = [ '# Newsletter draft', '' ];
-		foreach ( $this->items as $item ) {
-			$summary = $item['summary'] ?? '';
-			$lines[] = '- ' . ( \is_string( $summary ) ? $summary : '' );
+		$client = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
+		$draft  = null;
+		if ( $client instanceof LLM_Client ) {
+			try {
+				$draft = $client->chat(
+					Prompts::digest( $this->top_items( 10 ), Settings::get_string( 'relevance_profile' ) ),
+					[ 'max_tokens' => 1500 ]
+				);
+			} catch ( \RuntimeException $e ) {
+				// Rate-limited; an LLM failure NEVER throws out of flush — fall back to the ranked list.
+				$this->print_less_often( 'AI digest compose failed: ' . $e->getMessage() );
+			}
 		}
-		$draft = \implode( "\n", $lines ) . "\n";
+		if ( null === $draft || '' === \trim( $draft ) ) {
+			$draft = $this->render_ranked_list();
+		}
 
 		$msg                   = Message::new_message();
 		$msg[ Message::TYPE ]  = Message::TM_BYTESTREAM;
@@ -58,7 +81,43 @@ class Digest_Builder_Node extends Node {
 
 		$n           = \count( $this->items );
 		$this->items = [];
-		return "flushed $n summary(ies)";
+		return "flushed $n item(s)";
+	}
+
+	/** Render the accumulated summaries to a markdown bullet list — the no-AI fallback. */
+	private function render_ranked_list(): string {
+		$lines = [ '# Newsletter draft', '' ];
+		foreach ( $this->items as $item ) {
+			$summary = $item['summary'] ?? '';
+			$lines[] = '- ' . ( \is_string( $summary ) ? $summary : '' );
+		}
+		return \implode( "\n", $lines ) . "\n";
+	}
+
+	/**
+	 * The top $n accumulated items, highest `score` first.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function top_items( int $n ): array {
+		$items = $this->items;
+		\usort(
+			$items,
+			static fn ( array $a, array $b ): int => self::score_of( $b ) <=> self::score_of( $a )
+		);
+		/** @var array<int,array<string,mixed>> $top */
+		$top = \array_slice( $items, 0, $n );
+		return $top;
+	}
+
+	/**
+	 * Read an item's `score` as a float; absent or non-numeric becomes 0.
+	 *
+	 * @param array<array-key,mixed> $item
+	 */
+	private static function score_of( array $item ): float {
+		$score = $item['score'] ?? 0;
+		return \is_numeric( $score ) ? (float) $score : 0.0;
 	}
 
 	/**

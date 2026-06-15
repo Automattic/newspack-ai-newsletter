@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exponential recency decay); when it doesn't (Summarizer fell back), the existing
   keyword/source heuristic is used. No LLM call — purely deterministic.
 
+- **AI core — the Digest builder composes an LLM briefing.** On `flush`, the top-10
+  scored items are sent in one AI API Proxy call (`Prompts::digest`) to compose a
+  "what mattered" markdown briefing (intro + grouped sections + per-item blurbs).
+  No token / proxy error / empty result → falls back to the ranked bullet list. The
+  offsetlog snapshot contract (`save_state`/`restore_state`) is unchanged.
+
 - **Foundation of the `newspack-ai-newsletter` sibling plugin** — a team-intelligence
   digest built on the newspack-nodes substrate. This initial drop is the runnable
   pipeline skeleton + the shared seams; live sources, real LLM wiring, the dashboard,
