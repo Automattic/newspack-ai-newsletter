@@ -15,6 +15,19 @@ use Newspack_Nodes\Message;
 class Summarizer_Node extends Node {
 
 	/**
+	 * LLM-client factory seam. Lazily-defaulted at the call site to
+	 * `Settings::llm_client()` (null when no proxy token is configured). Tests
+	 * reassign in setUp to inject a real `Proxy_LLM_Client` — faking only its
+	 * `$http_post` seam — so prompt assembly, the client, and the JSON parse all
+	 * run as real, covered production code; tearDown resets it to null.
+	 *
+	 * Signature: `function (): ?LLM_Client`.
+	 *
+	 * @var (\Closure(): ?LLM_Client)|null
+	 */
+	public static ?\Closure $llm_factory = null;
+
+	/**
 	 * The ONE seam a real summarizer replaces: item -> one-line summary. Heuristic = deterministic template.
 	 *
 	 * @param array<string,mixed> $item
@@ -36,7 +49,27 @@ class Summarizer_Node extends Node {
 			return;
 		}
 		/** @var array<string,mixed> $item */
-		$item['summary'] = $this->summarize( $item );
+		$client   = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
+		$enriched = null;
+		if ( $client instanceof LLM_Client ) {
+			try {
+				$raw      = $client->chat(
+					Prompts::enrich( $item, Settings::get_string( 'relevance_profile' ) ),
+					[ 'max_tokens' => 200, 'temperature' => 0.3 ]
+				);
+				$enriched = self::parse_enrich( $raw );
+			} catch ( \RuntimeException $e ) {
+				// Rate-limited; an LLM failure NEVER throws out of fill().
+				$this->print_less_often( 'AI enrich failed: ' . $e->getMessage() );
+			}
+		}
+		if ( null !== $enriched ) {
+			$item['summary']         = $enriched['summary'];
+			$item['relevance_score'] = $enriched['relevance_score'];
+			$item['reason']          = $enriched['reason'];
+		} else {
+			$item['summary'] = $this->summarize( $item );
+		}
 
 		$out                   = Message::new_message();
 		$out[ Message::TYPE ]  = Message::TM_STRUCT;
@@ -44,6 +77,28 @@ class Summarizer_Node extends Node {
 		$out[ Message::VALUE ] = $item;
 		// parent::fill (base, not $this — would recurse) stamps TO from target, increments the counter, and forwards to sink.
 		parent::fill( $out );
+	}
+
+	/**
+	 * Lenient parse of the enrich reply: extract the first {...} object, require a
+	 * string `summary`, clamp `relevance_score` to a 0-10 int. Returns null on any
+	 * shortfall so the caller falls back to the heuristic.
+	 *
+	 * @return array{summary:string,relevance_score:int,reason:string}|null
+	 */
+	private static function parse_enrich( string $raw ): ?array {
+		$json = ( 1 === \preg_match( '/\{.*\}/s', $raw, $m ) ) ? $m[0] : $raw;
+		$d    = \json_decode( $json, true );
+		if ( ! \is_array( $d ) || ! isset( $d['summary'] ) || ! \is_string( $d['summary'] ) ) {
+			return null;
+		}
+		$score  = $d['relevance_score'] ?? 0;
+		$reason = $d['reason'] ?? '';
+		return [
+			'summary'         => $d['summary'],
+			'relevance_score' => \max( 0, \min( 10, \is_numeric( $score ) ? (int) $score : 0 ) ),
+			'reason'          => \is_scalar( $reason ) ? (string) $reason : '',
+		];
 	}
 
 	public static function node_schema(): array {

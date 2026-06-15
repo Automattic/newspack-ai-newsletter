@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **AI core — the Summarizer now calls the LLM.** Each item makes one AI API Proxy
+  enrich call (`Prompts::enrich`) returning a one-line `summary`, a 0–10
+  `relevance_score` (against the configured relevance profile), and a `reason`. When
+  no `ai_proxy_token` is set or the proxy errors/returns unparseable JSON, it falls
+  back to the heuristic summary (no score) and never throws. Driven by `Settings::get`
+  / `Settings::llm_client` and the new `Prompts` builders.
+
 - **Foundation of the `newspack-ai-newsletter` sibling plugin** — a team-intelligence
   digest built on the newspack-nodes substrate. This initial drop is the runnable
   pipeline skeleton + the shared seams; live sources, real LLM wiring, the dashboard,
