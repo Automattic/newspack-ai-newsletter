@@ -4,7 +4,6 @@
 #
 # Output: release/newspack-ai-newsletter.zip — the plugin dir at the
 # archive root, ready for: wp plugin install --force --activate <url>.zip
-# Also publishes release/00-newspack-profiler.php as a standalone mu-plugin asset.
 #
 
 set -euo pipefail
@@ -38,10 +37,6 @@ rm -f "${STAGING_DIR}/${PLUGIN}"/composer.*
 echo "=== Creating release zip ==="
 echo "  ${PLUGIN}.zip"
 (cd "${STAGING_DIR}" && zip -rqX "${RELEASE_DIR}/${PLUGIN}.zip" "${PLUGIN}" --exclude '*/._*' --exclude '*/.DS_Store')
-
-# The Atomic deploy script fetches this mu-plugin from the release URL; it
-# installs under mu-plugins/, not wp-content/plugins/.
-cp "${SCRIPT_DIR}/mu-plugins/00-newspack-profiler.php" "${RELEASE_DIR}/"
 
 rm -rf "${STAGING_DIR}"
 
