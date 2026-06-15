@@ -1,0 +1,55 @@
+includes:
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+parameters:
+    level: 10
+    # phpstan-strict-rules: the full set EXCEPT rules that fight WordPress /
+    # node-runtime idioms — empty() (pervasive WP), truthy conditionals
+    # (if ($count) / !$str), short ternary ($x ?: $y), and dynamic property /
+    # method access (Node $this->{$name} per make_node decision #11).
+    # checkDynamicProperties is off too (dynamic node config assignment).
+    strictRules:
+        allRules: true
+        disallowedEmpty: false
+        booleansInConditions: false
+        booleansInLoopConditions: false
+        disallowedShortTernary: false
+        noVariableVariables: false
+    checkDynamicProperties: false
+    # PHP 8.2+ — this application depends on the PHP 8.2+ substrate and is
+    # deployed to Eve / Atomic where PHP 8.4 is available.
+    phpVersion: 80200
+    paths:
+        - newspack-ai-newsletter.php
+        - includes
+    excludePaths:
+        - vendor
+        - tests
+        - build (?)
+        - release (?)
+        - node_modules
+    bootstrapFiles:
+        # Defines NEWSPACK_AI_NEWSLETTER_DIR / _URL / _VERSION via
+        # define(). Loading it lets PHPStan see those constants inside includes/.
+        - newspack-ai-newsletter.php
+    scanFiles:
+        # WP-CLI is loaded only when WP-CLI itself runs (defined('WP_CLI')).
+        # szepeviktor/phpstan-wordpress doesn't ship WP-CLI stubs; supply them
+        # via php-stubs/wp-cli-stubs.
+        - vendor/php-stubs/wp-cli-stubs/wp-cli-stubs.php
+        # Substrate plugin ROOT file: define()s NEWSPACK_NODES_VERSION (the
+        # runtime version). scanDirectories above covers the substrate classes
+        # under includes/, but this constant lives in the plugin root — scan it
+        # so production references to the runtime version resolve.
+        - ../newspack-nodes/newspack-nodes.php
+    scanDirectories:
+        # Substrate plugin (newspack-nodes). Loaded at runtime by WordPress
+        # via the deferred-loader pattern in newspack-ai-newsletter.php
+        # — its classes are NOT in this plugin's autoloader, but every
+        # Node subclass / static call here references them. Point PHPStan
+        # at the substrate sources so it can discover those symbols.
+        - ../newspack-nodes/includes
+    # treatPhpDocTypesAsCertain + reportUnmatchedIgnoredErrors left at PHPStan
+    # defaults (both `true`). First makes PHPDoc types behave like real types
+    # for always-true/always-false detection. Second fails the build on any
+    # stale `@phpstan-ignore` comment — we don't use any, but enforcing the
+    # absence keeps it that way.

@@ -1,0 +1,25 @@
+# Build outputs
+/build/
+/node_modules/
+/vendor/
+
+# Test coverage outputs
+/coverage/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Release artifacts
+/release/
+/.release-staging/
+
+# Local design working docs (specs/plans) — kept local, never committed
+/docs/superpowers/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Agent tooling scratch — a regenerable symlink to the tracked .claude dir; never track it.
+.agents

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.0/phpunit.xsd"
+         bootstrap="bootstrap.php"
+         colors="true"
+         cacheDirectory="/tmp/phpunit-cache-newspack-ai-newsletter"
+         failOnWarning="true"
+         beStrictAboutOutputDuringTests="false">
+    <php>
+        <env name="LOCAL_NEWSPACK_NODES_CONF" value="newspack-ai-newsletter-test-config.php"/>
+    </php>
+    <testsuites>
+        <testsuite name="Unit Tests"><directory>unit</directory></testsuite>
+        <testsuite name="Integration Tests"><directory>integration</directory></testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>../includes</directory>
+        </include>
+    </source>
+</phpunit>

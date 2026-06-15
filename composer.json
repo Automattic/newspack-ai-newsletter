@@ -1,0 +1,59 @@
+{
+	"name": "newspack/ai-newsletter",
+	"description": "AI-driven team intelligence digest built on newspack-nodes.",
+	"type": "wordpress-plugin",
+	"license": "GPL-2.0-or-later",
+	"require": {
+		"php": ">=8.2"
+	},
+	"autoload": {
+		"classmap": [
+			"includes/"
+		]
+	},
+	"require-dev": {
+		"automattic/vipwpcs": "^3.0",
+		"wp-coding-standards/wpcs": "^3.0",
+		"dealerdirect/phpcodesniffer-composer-installer": "*",
+		"brainmaestro/composer-git-hooks": "^3.0",
+		"phpstan/phpstan": "^2.1",
+		"phpstan/extension-installer": "^1.4",
+		"szepeviktor/phpstan-wordpress": "^2.0",
+		"php-stubs/wp-cli-stubs": "^2.12",
+		"phpunit/phpunit": "^10.0",
+		"phpstan/phpstan-strict-rules": "^2.0"
+	},
+	"config": {
+		"platform": {
+			"php": "8.2"
+		},
+		"allow-plugins": {
+			"dealerdirect/phpcodesniffer-composer-installer": true,
+			"phpstan/extension-installer": true
+		}
+	},
+	"extra": {
+		"hooks": {
+			"pre-commit": "./node_modules/.bin/lint-staged",
+			"commit-msg": "cat $1 | ./node_modules/.bin/commitlint",
+			"pre-push": "./scripts/pre-push"
+		},
+		"phpstan/extension-installer": {
+			"ignore": [
+				"phpstan/phpstan-strict-rules"
+			]
+		}
+	},
+	"scripts": {
+		"lint": "phpcs",
+		"lint:fix": "phpcbf",
+		"build:autoloaders": "composer install --optimize-autoloader",
+		"build-release": "./build-release.sh",
+		"post-install-cmd": [
+			"[ -f vendor/bin/cghooks ] && vendor/bin/cghooks add --no-lock --force-win || true"
+		],
+		"post-update-cmd": [
+			"[ -f vendor/bin/cghooks ] && vendor/bin/cghooks update || true"
+		]
+	}
+}
