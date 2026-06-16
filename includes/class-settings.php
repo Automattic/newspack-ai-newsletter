@@ -55,6 +55,34 @@ class Settings {
 		return \is_scalar( $value ) ? (string) $value : '';
 	}
 
+	/**
+	 * List config read (e.g. `feeds`, `github_repos`): the stored value as a list of
+	 * non-empty strings. A scalar option becomes a single-element list; anything
+	 * else becomes []. Entries are trimmed and blanks dropped.
+	 *
+	 * @return array<int,string>
+	 */
+	public static function get_array( string $key ): array {
+		$value = self::get( $key );
+		if ( \is_scalar( $value ) ) {
+			$value = [ (string) $value ];
+		}
+		if ( ! \is_array( $value ) ) {
+			return [];
+		}
+		$out = [];
+		foreach ( $value as $entry ) {
+			if ( ! \is_scalar( $entry ) ) {
+				continue;
+			}
+			$trimmed = \trim( (string) $entry );
+			if ( '' !== $trimmed ) {
+				$out[] = $trimmed;
+			}
+		}
+		return $out;
+	}
+
 	/** Build the proxy client from config; null when no token (callers fall back to heuristics). */
 	public static function llm_client(): ?LLM_Client {
 		$token = self::get_string( 'ai_proxy_token' );
@@ -118,6 +146,13 @@ class Settings {
 				),
 
 				// -- Connector secrets ---------------------------------------
+				new Field(
+					key: 'github_repos',
+					type: 'array_strings',
+					label: static fn(): string => \__( 'GitHub Repos', 'newspack-ai-newsletter' ),
+					section: self::CONNECTORS_SECTION,
+					delete_on_blank: false,
+				),
 				new Field(
 					key: 'github_token',
 					type: 'text',

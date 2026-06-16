@@ -21,6 +21,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Connector substrate — `Source_Node` base.** A new abstract `Source_Node extends Node implements Source` owns the uniform connector behavior so each connector supplies only `fetch( $config )` (the blocking HTTP call) and `config()` (its Settings read). On a fire-and-forget `TICK` (`TM_REQUEST`) it fetches, dedups by item `id` against an in-process bounded set (`MAX_SEEN = 2000`, oldest evicted), and emits each new item as `TM_STRUCT`. It also provides `normalize_item()` (the shared `{source,id,title,url,body,timestamp}` coercion) and `source_schema()` (the shared Source node_schema) so connectors don't restate either. (Dedup is per-worker-lifetime; durable cross-respawn dedup is a follow-up — it belongs at the ingest layer keyed by id, not in the head source.)
+- **Connector — GitHub source.** `Github_Source_Node` fetches Releases, Merged PRs (closed with a `merged_at`), and Issues (the issues endpoint's PR entries are dropped) for every repo in the `github_repos` setting, normalized to the item contract with stable ids (`github:owner/repo#release-11` / `#pr-5` / `#issue-7`). Bearer auth + `User-Agent` when `github_token` is set. A failed repo/endpoint contributes nothing and never throws. Trigger `request_node github TICK`; the `wp_remote_get` call sits behind `Github_Source_Node::$http_get`.
+- **Connector — Linear source.** `Linear_Source_Node` POSTs a GraphQL query for recently-updated issues (raw-token `Authorization`, no `Bearer`) and normalizes `data.issues.nodes[]` to the item contract (`linear:ABC-123`). No token → no call; transport error / non-200 / GraphQL-error body → nothing, never throws. Trigger `request_node linear TICK`; behind `Linear_Source_Node::$http_post`.
+- **Settings — `github_repos` list + `Settings::get_array()`.** A new `github_repos` connector field (list of `owner/name`) and a list-config reader that returns the stored value as a trimmed, non-empty list of strings (shared by the `feeds` + `github_repos` connectors).
+- **Connector — RSS/Atom Feed source.** `Feed_Source_Node` (a `Source_Node`) fetches
+  every URL in the `feeds` setting and normalizes both RSS 2.0 (`channel/item`) and
+  Atom (`entry`) into the digest item contract `{source,id,title,url,body,timestamp}`.
+  The id prefers the RSS `guid` / Atom `id` and falls back to the link, so it stays
+  stable across ticks. Atom link selection prefers `rel="alternate"` (the canonical
+  URL) over a leading `rel="self"`/`edit`; RSS dating falls back to Dublin Core
+  `<dc:date>` when `<pubDate>` is absent. The body is parsed with `LIBXML_NONET`
+  (untrusted third-party XML). A feed that transport-errors, returns non-200, or won't
+  parse contributes nothing and never throws. Trigger with `request_node feed TICK`;
+  the `wp_remote_get` call sits behind the `Feed_Source_Node::$http_get` closure seam.
+
 - **AI core — the Summarizer now calls the LLM.** Each item makes one AI API Proxy
   enrich call (`Prompts::enrich`) returning a one-line `summary`, a 0–10
   `relevance_score` (against the configured relevance profile), and a `reason`. When
