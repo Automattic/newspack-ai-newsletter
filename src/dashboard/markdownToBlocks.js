@@ -49,8 +49,9 @@ function inline( text ) {
 }
 
 /**
- * Serialize a heading. WordPress omits the level attr for the default h2 and
- * always uses an <h2> tag with the wp-block-heading class.
+ * Serialize a heading. WordPress omits the level attr for the default h2, and the
+ * tag MUST match the level (`<h3>` for level 3) — a level/tag mismatch fails the
+ * block's save-validation ("unexpected or invalid content") in the editor.
  *
  * @param {number} level Heading level (1–3).
  * @param {string} text  Raw heading text.
@@ -60,7 +61,9 @@ function headingBlock( level, text ) {
 	const attr = 2 === level ? '' : ` {"level":${ level }}`;
 	return (
 		`<!-- wp:heading${ attr } -->\n` +
-		`<h2 class="wp-block-heading">${ inline( text ) }</h2>\n` +
+		`<h${ level } class="wp-block-heading">${ inline(
+			text
+		) }</h${ level }>\n` +
 		'<!-- /wp:heading -->'
 	);
 }

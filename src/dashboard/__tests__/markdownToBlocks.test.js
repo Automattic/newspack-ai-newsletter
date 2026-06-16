@@ -13,10 +13,10 @@ describe( 'markdownToBlocks', () => {
 		expect( markdownToBlocks() ).toBe( '' );
 	} );
 
-	it( 'renders an h1 with a level attribute', () => {
+	it( 'renders an h1 with a level attribute and a matching h1 tag', () => {
 		expect( markdownToBlocks( '# Title' ) ).toBe(
 			'<!-- wp:heading {"level":1} -->\n' +
-				'<h2 class="wp-block-heading">Title</h2>\n' +
+				'<h1 class="wp-block-heading">Title</h1>\n' +
 				'<!-- /wp:heading -->'
 		);
 	} );
@@ -29,10 +29,10 @@ describe( 'markdownToBlocks', () => {
 		);
 	} );
 
-	it( 'renders an h3 with a level attribute', () => {
+	it( 'renders an h3 with a level attribute and a matching h3 tag', () => {
 		expect( markdownToBlocks( '### Sub' ) ).toBe(
 			'<!-- wp:heading {"level":3} -->\n' +
-				'<h2 class="wp-block-heading">Sub</h2>\n' +
+				'<h3 class="wp-block-heading">Sub</h3>\n' +
 				'<!-- /wp:heading -->'
 		);
 	} );
@@ -162,7 +162,7 @@ describe( 'markdownToBlocks', () => {
 		);
 		expect( out ).toContain(
 			'<!-- wp:heading {"level":3} -->\n' +
-				'<h2 class="wp-block-heading">1. Content-gate rule engine</h2>'
+				'<h3 class="wp-block-heading">1. Content-gate rule engine</h3>'
 		);
 		expect( out ).toContain( '<!-- wp:list -->' );
 		expect( out ).toContain(
