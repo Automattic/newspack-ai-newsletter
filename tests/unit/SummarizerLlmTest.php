@@ -79,4 +79,63 @@ final class SummarizerLlmTest extends TestCase {
 		$this->assertArrayHasKey( 'summary', $out );
 		$this->assertArrayNotHasKey( 'relevance_score', $out );
 	}
+
+	/** Read a node's set_state cache (the substrate observability/notify cache). */
+	private function set_state_cache( Summarizer_Node $node ): array {
+		$ref = new \ReflectionProperty( \Newspack_Nodes\Node::class, 'set_state' );
+		$ref->setAccessible( true );
+		/** @var array<string,mixed> $cache */
+		$cache = $ref->getValue( $node );
+		return $cache;
+	}
+
+	public function test_publishes_summarized_state_on_the_heuristic_path(): void {
+		Summarizer_Node::$llm_factory = static fn (): ?LLM_Client => null;
+
+		$node = new Summarizer_Node();
+		$node->sink( new Capture_Sink_Node() );
+		$message = $this->struct( [ 'source' => 'github', 'id' => 'g#7', 'title' => 'Roundup', 'body' => 'b' ] );
+		$node->fill( $message );
+
+		$state = $this->set_state_cache( $node );
+		$this->assertArrayHasKey( 'SUMMARIZED', $state );
+		$this->assertSame( 'g#7', $state['SUMMARIZED']['id'] );
+		$this->assertSame( 'heuristic', $state['SUMMARIZED']['via'] );
+		$this->assertArrayHasKey( 'summary', $state['SUMMARIZED'] );
+	}
+
+	public function test_publishes_summarized_state_with_via_llm_on_the_llm_path(): void {
+		Proxy_LLM_Client::$http_post  = static fn () => [
+			'response' => [ 'code' => 200 ],
+			'body'     => (string) \json_encode(
+				[ 'choices' => [ [ 'message' => [ 'content' => '{"summary":"One line.","relevance_score":8,"reason":"on-topic"}' ] ] ] ]
+			),
+		];
+		Summarizer_Node::$llm_factory = static fn (): LLM_Client => new Proxy_LLM_Client( 'https://p/v1', 'K', 'm', 'f' );
+
+		$node = new Summarizer_Node();
+		$node->sink( new Capture_Sink_Node() );
+		$message = $this->struct( [ 'source' => 'github', 'id' => 'g#8', 'title' => 'T', 'body' => 'B' ] );
+		$node->fill( $message );
+
+		$state = $this->set_state_cache( $node );
+		$this->assertSame( 'llm', $state['SUMMARIZED']['via'] );
+		$this->assertSame( 8, $state['SUMMARIZED']['relevance_score'] );
+	}
+
+	public function test_publishes_enrich_failed_state_when_the_llm_errors(): void {
+		Proxy_LLM_Client::$http_post  = static fn () => [ 'response' => [ 'code' => 503 ], 'body' => 'down' ];
+		Summarizer_Node::$llm_factory = static fn (): LLM_Client => new Proxy_LLM_Client( 'https://p/v1', 'K', 'm', 'f' );
+
+		$node = new Summarizer_Node();
+		$node->sink( new Capture_Sink_Node() );
+		$message = $this->struct( [ 'source' => 'github', 'id' => 'g#9', 'title' => 'X', 'body' => 'b' ] );
+		$node->fill( $message );
+
+		$state = $this->set_state_cache( $node );
+		$this->assertArrayHasKey( 'ENRICH_FAILED', $state );
+		$this->assertSame( 'g#9', $state['ENRICH_FAILED']['id'] );
+		// And it still falls back + publishes the heuristic summary.
+		$this->assertSame( 'heuristic', $state['SUMMARIZED']['via'] );
+	}
 }
