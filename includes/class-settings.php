@@ -34,6 +34,9 @@ class Settings {
 	private const AI_MODEL          = 'gpt-oss-120b';
 	private const AI_FEATURE        = 'newspack-ai-newsletter';
 
+	/** Where the digest:log Node writes the rendered newsletter. MUST match topologies/newspack-ai-newsletter.tsl. */
+	public const DIGEST_PATH = '/tmp/newspack-ai-newsletter/digest.md';
+
 	/** @var Schema|null Memoized — pure structure (values resolve inside callbacks). */
 	private static ?Schema $schema = null;
 

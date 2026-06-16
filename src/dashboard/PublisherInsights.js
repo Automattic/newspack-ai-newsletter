@@ -4,9 +4,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import { useNodeState } from '@newspack-nodes/runtime';
 import { useInsightsGraph } from './hooks/useInsightsGraph';
 import { emptyModel } from './nodes/insightsView';
-import { draftNewsletter } from './draftNewsletter';
-import { newsletterPost } from './newsletterPost';
-import { itemLabel } from './itemLabel';
+import { markdownToBlocks } from './markdownToBlocks';
 import './styles/insights.scss';
 
 // REST-call seam for the "Create draft post" action. Lazily defaulted to a
@@ -25,10 +23,12 @@ const defaultCreateDraft = ( { title, content } ) =>
  * poll fires the `insights` command, and `insights:view` holds the model React
  * reads via useNodeState. This component renders that model — an error notice,
  * an empty state, or the populated analytics dashboard (KPI stat cards,
- * proportion bars, a score-ranked table, and a draft section that previews the
- * items, copies markdown, or creates a real WordPress draft). Styling follows
- * the Newspack in-product design system (docs/DESIGN.product.md): light
- * surfaces, a Cobalt accent, Inter, laid out in flow within wp-admin.
+ * proportion bars, a score-ranked table, and a newsletter section that shows the
+ * REAL rendered digest — the latest digest:log content the poll delivers, or a
+ * fresh recompose from the "Generate digest" button — then copies its markdown
+ * or creates a WordPress draft from it as native blocks). Styling follows the
+ * Newspack in-product design system (docs/DESIGN.product.md): light surfaces, a
+ * Cobalt accent, Inter, laid out in flow within wp-admin.
  *
  * @param {Object}   props
  * @param {number}   [props.refreshMs]     Poll interval in ms (default 4000).
@@ -40,11 +40,12 @@ export default function PublisherInsights( {
 	commandClient,
 	createDraft = defaultCreateDraft,
 } ) {
-	useInsightsGraph( { refreshMs, commandClient } );
+	const { generate } = useInsightsGraph( { refreshMs, commandClient } );
 	// One fallback to the canonical empty shape; the node guarantees the data
 	// fields on every publish (model, error-model, or empty), so no per-field guards.
 	const model = useNodeState( 'insights:view', 'view' ) || emptyModel();
-	const [ draft, setDraft ] = useState( null );
+	const [ generated, setGenerated ] = useState( null );
+	const [ generating, setGenerating ] = useState( false );
 	const [ copied, setCopied ] = useState( false );
 	const [ editLink, setEditLink ] = useState( null );
 	const [ draftError, setDraftError ] = useState( null );
@@ -56,6 +57,9 @@ export default function PublisherInsights( {
 	const sources = Object.entries( model.sources ?? {} );
 	const top = model.top ?? [];
 	const isEmpty = ! model.accumulated && 0 === top.length;
+	// The shown digest: a freshly generated one wins; else the durable digest:log
+	// content the poll delivered. Empty until a FLUSH/Generate has produced one.
+	const digest = null !== generated ? generated : model.digest || '';
 
 	const topScore = top.reduce(
 		( max, item ) => Math.max( max, item.score || 0 ),
@@ -83,7 +87,7 @@ export default function PublisherInsights( {
 			return;
 		}
 		clipboard
-			.writeText( draftNewsletter( top ) )
+			.writeText( digest )
 			.then( () => setCopied( true ) )
 			.catch( () => {
 				setCopied( false );
@@ -96,11 +100,49 @@ export default function PublisherInsights( {
 			} );
 	};
 
+	const onGenerate = () => {
+		setGenerating( true );
+		setDraftError( null );
+		setCopied( false );
+		generate()
+			.then( ( markdown ) => {
+				setGenerating( false );
+				// A successful-but-empty recompose (no scored items / empty LLM
+				// reply) must not wipe the digest already on screen — notify and
+				// keep what's shown.
+				if ( '' === markdown.trim() ) {
+					setDraftError(
+						__(
+							'Nothing to generate yet — the pipeline has no scored items.',
+							'newspack-ai-newsletter'
+						)
+					);
+					return;
+				}
+				setGenerated( markdown );
+			} )
+			.catch( ( err ) => {
+				setGenerating( false );
+				setDraftError(
+					err && err.message
+						? err.message
+						: __(
+								'Could not generate the digest.',
+								'newspack-ai-newsletter'
+						  )
+				);
+			} );
+	};
+
 	const onCreateDraft = () => {
 		setCreating( true );
 		setDraftError( null );
 		setEditLink( null );
-		createDraft( newsletterPost( top ) )
+		setCopied( false );
+		createDraft( {
+			title: __( 'Publisher Newsletter', 'newspack-ai-newsletter' ),
+			content: markdownToBlocks( digest ),
+		} )
 			.then( ( post ) => {
 				setCreating( false );
 				if ( ! post || ! post.id ) {
@@ -288,17 +330,21 @@ export default function PublisherInsights( {
 						<button
 							type="button"
 							className="eai-insights__btn"
-							onClick={ () => setDraft( top ) }
+							onClick={ onGenerate }
+							disabled={ generating }
 						>
-							{ __(
-								'Draft newsletter',
-								'newspack-ai-newsletter'
-							) }
+							{ generating
+								? __( 'Generating…', 'newspack-ai-newsletter' )
+								: __(
+										'Generate digest',
+										'newspack-ai-newsletter'
+								  ) }
 						</button>
 						<button
 							type="button"
 							className="eai-insights__btn eai-insights__btn--secondary"
 							onClick={ onCopy }
+							disabled={ '' === digest }
 						>
 							{ __( 'Copy markdown', 'newspack-ai-newsletter' ) }
 						</button>
@@ -306,7 +352,7 @@ export default function PublisherInsights( {
 							type="button"
 							className="eai-insights__btn eai-insights__btn--secondary"
 							onClick={ onCreateDraft }
-							disabled={ creating }
+							disabled={ creating || '' === digest }
 						>
 							{ __(
 								'Create draft post',
@@ -339,25 +385,20 @@ export default function PublisherInsights( {
 						</div>
 					) }
 
-					{ null !== draft && (
-						<ul
+					{ '' !== digest ? (
+						<pre
 							className="eai-insights__preview"
 							data-testid="eai-insights-preview"
 						>
-							{ draft.map( ( item, i ) => {
-								const { title, source } = itemLabel( item );
-								return (
-									<li key={ `${ source }-${ i }` }>
-										<span className="eai-insights__preview-title">
-											{ title }
-										</span>
-										<span className="eai-insights__preview-source">
-											{ source }
-										</span>
-									</li>
-								);
-							} ) }
-						</ul>
+							{ digest }
+						</pre>
+					) : (
+						<p className="eai-insights__preview-empty">
+							{ __(
+								'No digest yet — Generate one, or run a FLUSH from the REPL.',
+								'newspack-ai-newsletter'
+							) }
+						</p>
 					) }
 				</section>
 			</div>

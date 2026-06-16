@@ -6,18 +6,25 @@ import {
 
 // The shaped-but-empty model so a render before the first reply is still valid.
 // Exported as the canonical empty shape — the view's fallback reuses it.
-export const emptyModel = () => ( { sources: {}, top: [], accumulated: 0 } );
+export const emptyModel = () => ( {
+	sources: {},
+	top: [],
+	accumulated: 0,
+	digest: '',
+} );
 
 /**
  * `insights:view` — owns the Publisher Insights view model, the single surface
  * React reads via useNodeState('insights:view','view').
  *
- * The `insights` Service_CI verb returns the FULLY-SHAPED model as a JSON STRING
- * in the reply's VALUE.payload (no transform node needed). The poll fires with
- * FROM=`insights:view` and no pending entry, so its reply parses the payload and
- * publishes the model. Awaited verbs (if any) stash a `{ resolve, reject }` in
- * `pending` keyed by message[ID]; the matching reply settles that Promise and
- * returns early (reject on TM_ERROR).
+ * The `insights` Service_CI verb returns the FULLY-SHAPED model (sources, top,
+ * accumulated, and the rendered `digest`) as a JSON STRING in the reply's
+ * VALUE.payload (no transform node needed). The poll fires with FROM=`insights:view`
+ * and no pending entry, so its reply parses the payload and publishes the model.
+ * The awaited `generate` verb stashes a `{ resolve, reject }` in `replies` keyed
+ * by message[ID]; the matching reply settles that Promise and returns early
+ * (reject on TM_ERROR). On teardown those pending entries are rejected so a graph
+ * reinit can't strand a caller awaiting a reply that will never land.
  *
  * The pending-Map + errorMessage shape mirrors workerStatusView via the shared
  * PendingReplies registry.
@@ -75,5 +82,12 @@ export class InsightsViewNode extends Node {
 
 	_publish() {
 		this.setState( 'view', this.model );
+	}
+
+	// Reject any in-flight awaited verb so a graph reinit / page unmount doesn't
+	// strand a caller awaiting a reply that will never land on this removed node.
+	removeNode() {
+		this.replies.rejectAll( 'insights graph torn down' );
+		super.removeNode();
 	}
 }

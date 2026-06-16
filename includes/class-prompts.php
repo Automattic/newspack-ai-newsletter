@@ -43,8 +43,8 @@ class Prompts {
 	/**
 	 * Build the digest chat messages for the ranked item set.
 	 *
-	 * @param array<int,array<string,mixed>> $items             The ranked items (title/summary/source/score/url).
-	 * @param string                         $relevance_profile The audience's relevance profile.
+	 * @param array<int,array<array-key,mixed>> $items             The ranked items (title/summary/source/score/url); JSON-sourced, so array-key.
+	 * @param string                            $relevance_profile The audience's relevance profile.
 	 * @return array<int,array{role:string,content:string}>
 	 */
 	public static function digest( array $items, string $relevance_profile ): array {
@@ -79,7 +79,7 @@ class Prompts {
 	/**
 	 * Read a scalar item field as a string; absent or non-scalar values become ''.
 	 *
-	 * @param array<string,mixed> $item The item array.
+	 * @param array<array-key,mixed> $item The item array.
 	 */
 	private static function field( array $item, string $key ): string {
 		$value = $item[ $key ] ?? '';

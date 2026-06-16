@@ -17,6 +17,7 @@ import {
 	TYPE,
 	TM_COMMAND,
 	TM_RESPONSE,
+	TM_ERROR,
 	Core,
 } from '@newspack-nodes/runtime';
 
@@ -186,5 +187,78 @@ describe( 'useInsightsGraph — poll', () => {
 		} finally {
 			jest.useRealTimers();
 		}
+	} );
+} );
+
+describe( 'useInsightsGraph — generate (awaited verb)', () => {
+	test( 'generate() fires a `generate` command (FROM=view) and resolves to the digest markdown', async () => {
+		const client = makeFakeClient( {
+			insights: JSON.stringify( {
+				sources: {},
+				top: [],
+				accumulated: 0,
+				digest: '',
+			} ),
+			generate: JSON.stringify( { digest: '## Fresh digest' } ),
+		} );
+		const { result } = renderHook( () =>
+			useInsightsGraph( { commandClient: client } )
+		);
+		await act( async () => {} );
+
+		let resolved;
+		await act( async () => {
+			resolved = await result.current.generate();
+		} );
+		expect( resolved ).toBe( '## Fresh digest' );
+
+		const genMsgs = client.batches
+			.flat()
+			.filter( ( m ) => 'generate' === m[ VALUE ]?.name );
+		expect( genMsgs.length ).toBe( 1 );
+		expect( genMsgs[ 0 ][ FROM ] ).toBe( VIEW );
+		expect( genMsgs[ 0 ][ ID ] ).toBeTruthy();
+	} );
+
+	test( 'generate() rejects when a TM_ERROR reply pivots back', async () => {
+		const failing = {
+			batches: [],
+			postBatch( messages ) {
+				failing.batches.push( messages );
+				return Promise.resolve(
+					messages.map( ( m ) => {
+						const reply = newMessage();
+						const isGen = 'generate' === m[ VALUE ]?.name;
+						reply[ TYPE ] = isGen
+							? TM_COMMAND | TM_RESPONSE | TM_ERROR
+							: TM_COMMAND | TM_RESPONSE;
+						reply[ TO ] = m[ FROM ];
+						reply[ ID ] = m[ ID ];
+						reply[ VALUE ] = {
+							name: m[ VALUE ]?.name,
+							payload: isGen
+								? 'compose failed'
+								: JSON.stringify( {
+										sources: {},
+										top: [],
+										accumulated: 0,
+										digest: '',
+								  } ),
+						};
+						return reply;
+					} )
+				);
+			},
+		};
+		const { result } = renderHook( () =>
+			useInsightsGraph( { commandClient: failing } )
+		);
+		await act( async () => {} );
+
+		await act( async () => {
+			await expect( result.current.generate() ).rejects.toThrow(
+				/compose failed/i
+			);
+		} );
 	} );
 } );

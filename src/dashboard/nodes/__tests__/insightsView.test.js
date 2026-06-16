@@ -121,4 +121,14 @@ describe( 'insights:view — node wiring', () => {
 		expect( v.name ).toBe( 'insights:view' );
 		expect( v.replies ).toBeInstanceOf( PendingReplies );
 	} );
+
+	test( 'removeNode rejects in-flight awaited replies (no stranded generate Promise)', async () => {
+		const v = makeView( 'insights:view' );
+		const promise = new Promise( ( resolve, reject ) => {
+			v.replies.add( 'gen-1', resolve, reject );
+		} );
+		v.removeNode();
+		await expect( promise ).rejects.toThrow( /torn down/i );
+		expect( v.replies.size ).toBe( 0 );
+	} );
 } );

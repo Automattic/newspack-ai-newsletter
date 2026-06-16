@@ -2,12 +2,14 @@
 /**
  * PublisherInsights — the thin view over the `insights:view` model. It mounts
  * the graph (useInsightsGraph) and reads the model via useNodeState. Here we
- * inject a fake CommandClient whose `insights` reply carries a known model, so
- * the mounted graph fills the view and the component renders the live analytics
- * dashboard (KPI stats, proportion bars, ranked table, draft actions).
+ * inject a fake CommandClient whose `insights` reply carries a known model (now
+ * including the REAL rendered `digest`) and whose `generate` reply carries a
+ * fresh digest, so the mounted graph fills the view and the component renders the
+ * live analytics dashboard plus the digest-driven newsletter actions.
  *
  * The "Create draft post" action is exercised through the injected `createDraft`
- * prop seam (never the real network).
+ * prop seam (never the real network); "Generate digest" goes through the real
+ * graph against the fake client.
  */
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -31,6 +33,11 @@ jest.mock( '@newspack-nodes/shared/hooks/usePageVisibility', () => ( {
 
 import PublisherInsights from '../PublisherInsights';
 
+// Distinct from the table titles, so a preview/copy/draft assertion can't be
+// satisfied by the top-items table.
+const DIGEST =
+	'# Sprint digest\n\n- **Big news** shipped\n- A hot thread heated up';
+
 const model = {
 	sources: { releases: 2, community: 1 },
 	top: [
@@ -38,9 +45,12 @@ const model = {
 		{ source: 'community', title: 'Hot thread', score: 4 },
 	],
 	accumulated: 3,
+	digest: DIGEST,
 };
 
-function makeClient( replyType, payload ) {
+// A fake CommandClient whose reply payload is keyed by verb (the CI reply pivot):
+// the poll's `insights` and the awaited `generate` get their own payloads.
+function clientFor( payloadByVerb, replyType = TM_COMMAND | TM_RESPONSE ) {
 	return {
 		buildMessage( { to, verb, args = '' } ) {
 			const m = newMessage();
@@ -55,7 +65,10 @@ function makeClient( replyType, payload ) {
 					reply[ TYPE ] = replyType;
 					reply[ TO ] = m[ FROM ];
 					reply[ ID ] = m[ ID ];
-					reply[ VALUE ] = { name: m[ VALUE ]?.name, payload };
+					reply[ VALUE ] = {
+						name: m[ VALUE ]?.name,
+						payload: payloadByVerb[ m[ VALUE ]?.name ] ?? null,
+					};
 					return reply;
 				} )
 			);
@@ -64,11 +77,14 @@ function makeClient( replyType, payload ) {
 }
 
 function clientReturning( jsonModel ) {
-	return makeClient( TM_COMMAND | TM_RESPONSE, jsonModel );
+	return clientFor( { insights: jsonModel } );
 }
 
 function clientFailing( errorText ) {
-	return makeClient( TM_COMMAND | TM_RESPONSE | TM_ERROR, errorText );
+	return clientFor(
+		{ insights: errorText },
+		TM_COMMAND | TM_RESPONSE | TM_ERROR
+	);
 }
 
 // Render the populated dashboard and wait until the live data has arrived.
@@ -107,12 +123,9 @@ describe( 'PublisherInsights', () => {
 		await waitFor( () =>
 			expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
 		);
-		// Total items = accumulated (3); Top score = max score (9.5); Sources = 2.
 		expect( screen.getByText( /total items/i ) ).toBeInTheDocument();
 		expect( screen.getByText( /top score/i ) ).toBeInTheDocument();
 		expect( screen.getByText( /^sources$/i ) ).toBeInTheDocument();
-		// Read each card's number by its sibling label, so the score-bar value in
-		// the table can't satisfy the assertion.
 		const nums = [
 			...container.querySelectorAll( '.eai-insights__stat' ),
 		].map(
@@ -132,11 +145,8 @@ describe( 'PublisherInsights', () => {
 		await waitFor( () =>
 			expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
 		);
-		// Rank cells.
 		expect( screen.getByText( '#1' ) ).toBeInTheDocument();
 		expect( screen.getByText( '#2' ) ).toBeInTheDocument();
-		// At least one score bar with an inline width style; the top item (max
-		// score) fills 100%.
 		const bars = container.querySelectorAll( '.eai-insights__score-bar' );
 		expect( bars.length ).toBe( 2 );
 		expect( bars[ 0 ].style.width ).toBe( '100%' );
@@ -154,23 +164,58 @@ describe( 'PublisherInsights', () => {
 		);
 		const bars = container.querySelectorAll( '.eai-insights__bar-fill' );
 		expect( bars.length ).toBe( 2 );
-		// releases = 2 of 3 total → ~66.66%.
 		expect( bars[ 0 ].style.width ).toContain( '66.6' );
 	} );
 
-	it( 'reveals a rendered preview (not a textarea) when "Draft newsletter" is clicked', async () => {
+	it( 'shows the REAL rendered digest (from the poll model) in the preview', async () => {
 		await renderPopulated();
-		fireEvent.click(
-			screen.getByRole( 'button', { name: /draft newsletter/i } )
-		);
-		// A preview list of items, NOT a raw-markdown textarea.
-		expect( screen.queryByRole( 'textbox' ) ).not.toBeInTheDocument();
 		const preview = await screen.findByTestId( 'eai-insights-preview' );
-		expect( preview.textContent ).toContain( 'Big release' );
-		expect( preview.textContent ).toContain( 'Hot thread' );
+		// The digest:log markdown, NOT a rebuilt list of item titles.
+		expect( preview.textContent ).toContain( 'Sprint digest' );
+		expect( preview.textContent ).toContain( 'Big news' );
 	} );
 
-	it( 'copies the markdown to the clipboard when "Copy markdown" is clicked', async () => {
+	it( 'regenerates the digest via the `generate` verb when "Generate digest" is clicked', async () => {
+		await renderPopulated( {
+			commandClient: clientFor( {
+				insights: JSON.stringify( model ),
+				generate: JSON.stringify( { digest: '## Regenerated brief' } ),
+			} ),
+		} );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: /generate digest/i } )
+		);
+		await waitFor( () =>
+			expect(
+				screen.getByTestId( 'eai-insights-preview' ).textContent
+			).toContain( 'Regenerated brief' )
+		);
+	} );
+
+	it( 'keeps the shown digest (and notifies) when a Generate returns empty — no wipe', async () => {
+		await renderPopulated( {
+			commandClient: clientFor( {
+				insights: JSON.stringify( model ),
+				generate: JSON.stringify( { digest: '' } ),
+			} ),
+		} );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: /generate digest/i } )
+		);
+		await waitFor( () =>
+			expect( screen.getByRole( 'alert' ) ).toBeInTheDocument()
+		);
+		// The previously-shown durable digest is NOT wiped by an empty recompose.
+		expect(
+			screen.getByTestId( 'eai-insights-preview' ).textContent
+		).toContain( 'Sprint digest' );
+		// And the actions stay usable.
+		expect(
+			screen.getByRole( 'button', { name: /copy markdown/i } )
+		).not.toBeDisabled();
+	} );
+
+	it( 'copies the REAL digest markdown to the clipboard when "Copy markdown" is clicked', async () => {
 		const writeText = jest.fn( () => Promise.resolve() );
 		Object.assign( window.navigator, { clipboard: { writeText } } );
 		await renderPopulated();
@@ -178,14 +223,11 @@ describe( 'PublisherInsights', () => {
 			screen.getByRole( 'button', { name: /copy markdown/i } )
 		);
 		expect( writeText ).toHaveBeenCalledTimes( 1 );
-		const copied = writeText.mock.calls[ 0 ][ 0 ];
-		expect( copied ).toContain( '# ' );
-		expect( copied ).toContain( 'Big release' );
-		// The transient "Copied" affordance appears.
+		expect( writeText.mock.calls[ 0 ][ 0 ] ).toContain( 'Sprint digest' );
 		expect( await screen.findByText( /copied/i ) ).toBeInTheDocument();
 	} );
 
-	it( 'creates a draft post and shows an "Edit draft" link on success', async () => {
+	it( 'creates a draft post as native blocks and shows an "Edit draft" link on success', async () => {
 		const createDraft = jest.fn( () => Promise.resolve( { id: 42 } ) );
 		await renderPopulated( { createDraft } );
 		fireEvent.click(
@@ -194,7 +236,9 @@ describe( 'PublisherInsights', () => {
 		await waitFor( () => expect( createDraft ).toHaveBeenCalledTimes( 1 ) );
 		const arg = createDraft.mock.calls[ 0 ][ 0 ];
 		expect( arg.title.length ).toBeGreaterThan( 0 );
-		expect( arg.content ).toContain( '<strong>Big release</strong>' );
+		// Block-delimited markup from the digest markdown, not a rebuilt item list.
+		expect( arg.content ).toContain( '<!-- wp:' );
+		expect( arg.content ).toContain( '<strong>Big news</strong>' );
 		const link = await screen.findByRole( 'link', { name: /edit draft/i } );
 		expect( link.getAttribute( 'href' ) ).toContain( 'post=42' );
 		expect( link.getAttribute( 'href' ) ).toContain( 'action=edit' );
@@ -209,8 +253,9 @@ describe( 'PublisherInsights', () => {
 			screen.getByRole( 'button', { name: /create draft post/i } )
 		);
 		await waitFor( () => expect( createDraft ).toHaveBeenCalledTimes( 1 ) );
-		const notice = await screen.findByText( /rest blew up/i );
-		expect( notice ).toBeInTheDocument();
+		expect(
+			await screen.findByText( /rest blew up/i )
+		).toBeInTheDocument();
 		expect(
 			screen.queryByRole( 'link', { name: /edit draft/i } )
 		).not.toBeInTheDocument();
@@ -218,7 +263,6 @@ describe( 'PublisherInsights', () => {
 
 	it( 'does not crash or show "Copied" when the clipboard API is unavailable', async () => {
 		const original = window.navigator.clipboard;
-		// Simulate an insecure context / older browser: no clipboard API.
 		Object.assign( window.navigator, { clipboard: undefined } );
 		await renderPopulated();
 		expect( () =>
@@ -243,7 +287,7 @@ describe( 'PublisherInsights', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'shows an empty state (no table) until the pipeline has produced items', async () => {
+	it( 'shows an empty state (no table, no generate button) until the pipeline has items', async () => {
 		render(
 			<PublisherInsights
 				refreshMs={ 4000 }
@@ -252,6 +296,7 @@ describe( 'PublisherInsights', () => {
 						sources: {},
 						top: [],
 						accumulated: 0,
+						digest: '',
 					} )
 				) }
 			/>
@@ -263,7 +308,7 @@ describe( 'PublisherInsights', () => {
 		);
 		expect( screen.queryByRole( 'table' ) ).not.toBeInTheDocument();
 		expect(
-			screen.queryByRole( 'button', { name: /draft newsletter/i } )
+			screen.queryByRole( 'button', { name: /generate digest/i } )
 		).not.toBeInTheDocument();
 	} );
 

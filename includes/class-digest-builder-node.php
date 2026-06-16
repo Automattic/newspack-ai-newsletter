@@ -63,21 +63,7 @@ class Digest_Builder_Node extends Node {
 	 */
 	private function handle_request( array $message ): void {
 		$client = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
-		$draft  = null;
-		if ( $client instanceof LLM_Client ) {
-			try {
-				$draft = $client->chat(
-					Prompts::digest( $this->top_items( 10 ), Settings::get_string( 'relevance_profile' ) ),
-					[ 'max_tokens' => 1500 ]
-				);
-			} catch ( \RuntimeException $e ) {
-				// Rate-limited; an LLM failure NEVER throws out of flush — fall back to the ranked list.
-				$this->print_less_often( 'AI digest compose failed: ' . $e->getMessage() );
-			}
-		}
-		if ( null === $draft || '' === \trim( $draft ) ) {
-			$draft = $this->render_ranked_list();
-		}
+		$draft  = Digest_Composer::compose( $this->items, $client, Settings::get_string( 'relevance_profile' ) );
 
 		$response                   = Message::new_message();
 		$response[ Message::TYPE ]  = Message::TM_BYTESTREAM;
@@ -86,42 +72,6 @@ class Digest_Builder_Node extends Node {
 		// parent::fill stamps TO from a connect_node-set target, then forwards to sink.
 		parent::fill( $response );
 		$this->items = [];
-	}
-
-	/** Render the accumulated summaries to a markdown bullet list — the no-AI fallback. */
-	private function render_ranked_list(): string {
-		$lines = [ '# Newsletter draft', '' ];
-		foreach ( $this->items as $item ) {
-			$summary = $item['summary'] ?? '';
-			$lines[] = '- ' . ( \is_string( $summary ) ? $summary : '' );
-		}
-		return \implode( "\n", $lines ) . "\n";
-	}
-
-	/**
-	 * The top $n accumulated items, highest `score` first.
-	 *
-	 * @return array<int,array<string,mixed>>
-	 */
-	private function top_items( int $n ): array {
-		$items = $this->items;
-		\usort(
-			$items,
-			static fn ( array $a, array $b ): int => self::score_of( $b ) <=> self::score_of( $a )
-		);
-		/** @var array<int,array<string,mixed>> $top */
-		$top = \array_slice( $items, 0, $n );
-		return $top;
-	}
-
-	/**
-	 * Read an item's `score` as a float; absent or non-numeric becomes 0.
-	 *
-	 * @param array<array-key,mixed> $item
-	 */
-	private static function score_of( array $item ): float {
-		$score = $item['score'] ?? 0;
-		return \is_numeric( $score ) ? (float) $score : 0.0;
 	}
 
 	/**
