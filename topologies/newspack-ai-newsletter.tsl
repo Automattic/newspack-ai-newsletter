@@ -28,7 +28,8 @@ make_node Partition      scored:partition <config:logs_dir>/scored.p<partition> 
 cmd scored:partition:config void_warranty
 make_node Consumer       scored:consumer <config:logs_dir>/scored.p<partition> <config:offsets_dir>/scored.p<partition>
 cmd scored:consumer:config set_snapshot_node digest
-make_node Digest_Builder digest
+# digest nudges scored:partition on FLUSH so scored:consumer persists the emptied snapshot.
+make_node Digest_Builder digest scored:partition
 make_node Tee            digest:tee
 # digest:log path MUST match Settings::DIGEST_PATH (Insights_CI reads the latest segment from there).
 make_node Log            digest:log /tmp/newspack-ai-newsletter/digest.md 1 7

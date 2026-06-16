@@ -17,6 +17,12 @@ class Digest_Builder_Node extends Node {
 	/** @var array<int,array<array-key,mixed>> Accumulated summarized items (array-key: they round-trip through offsetlog JSON). */
 	private array $items = [];
 
+	/** @var array<string,bool> Seen item ids for in-cycle dedup; rebuilt from items on restore, cleared on FLUSH. */
+	private array $seen = [];
+
+	/** Scored-partition node name to nudge on FLUSH (arg 0); '' disables the nudge. */
+	private string $nudge_target = '';
+
 	/**
 	 * LLM-client factory seam. Lazily-defaulted at the call site to
 	 * `Settings::llm_client()` (null when no proxy token is configured). Tests
@@ -50,9 +56,31 @@ class Digest_Builder_Node extends Node {
 		if ( ! \is_array( $value ) ) {
 			return;
 		}
-		/** @var array<string,mixed> $value */
+		/** @var array<array-key,mixed> $value */
+		$id = isset( $value['id'] ) && \is_string( $value['id'] ) ? $value['id'] : '';
+		if ( '' !== $id && isset( $this->seen[ $id ] ) ) {
+			return;
+		}
+		if ( '' !== $id ) {
+			$this->seen[ $id ] = true;
+		}
 		$this->items[] = $value;
 		++$this->counter;
+	}
+
+	/**
+	 * Parse the positional arguments: arg 0 is the scored Partition node name to
+	 * nudge on FLUSH (so scored:consumer persists the emptied snapshot).
+	 *
+	 * @param string|null $args Space-separated argument string, or null to read.
+	 */
+	public function arguments( ?string $args = null ): string {
+		if ( null !== $args ) {
+			$this->arguments    = $args;
+			$parts              = \preg_split( '/\s+/', \trim( $args ) ) ?: [];
+			$this->nudge_target = $parts[0] ?? '';
+		}
+		return $this->arguments;
 	}
 
 	/**
@@ -72,6 +100,28 @@ class Digest_Builder_Node extends Node {
 		// parent::fill stamps TO from a connect_node-set target, then forwards to sink.
 		parent::fill( $response );
 		$this->items = [];
+		$this->seen  = [];
+		$this->nudge_scored_partition();
+	}
+
+	/**
+	 * Append a throwaway message to the scored Partition (if configured) so
+	 * scored:consumer advances its cursor and its next checkpoint co-commits this
+	 * node's now-emptied snapshot. Without it a FLUSH changes our state but not the
+	 * consumer cursor, so the offsetlog keeps the stale full items list and a worker
+	 * restart reloads it. The '.' is ignored downstream (neither TM_REQUEST nor
+	 * TM_STRUCT). TO is set explicitly because `target` is the draft sink (digest:tee).
+	 */
+	private function nudge_scored_partition(): void {
+		if ( '' === $this->nudge_target ) {
+			return;
+		}
+		$nudge                   = Message::new_message();
+		$nudge[ Message::TYPE ]  = Message::TM_BYTESTREAM;
+		$nudge[ Message::FROM ]  = $this->name;
+		$nudge[ Message::TO ]    = $this->nudge_target;
+		$nudge[ Message::VALUE ] = '.';
+		parent::fill( $nudge );
 	}
 
 	/**
@@ -94,14 +144,23 @@ class Digest_Builder_Node extends Node {
 	 */
 	public function restore_state( array $state ): void {
 		$this->items = [];
+		$this->seen  = [];
 		$items       = $state['items'] ?? null;
 		if ( ! \is_array( $items ) ) {
 			return;
 		}
 		foreach ( $items as $item ) {
-			if ( \is_array( $item ) ) {
-				$this->items[] = $item;
+			if ( ! \is_array( $item ) ) {
+				continue;
 			}
+			$id = isset( $item['id'] ) && \is_string( $item['id'] ) ? $item['id'] : '';
+			if ( '' !== $id && isset( $this->seen[ $id ] ) ) {
+				continue;
+			}
+			if ( '' !== $id ) {
+				$this->seen[ $id ] = true;
+			}
+			$this->items[] = $item;
 		}
 	}
 
@@ -109,7 +168,12 @@ class Digest_Builder_Node extends Node {
 		return \array_merge( parent::node_schema(), [
 			'category'     => 'Transform',
 			'description'  => 'Accumulates summaries; a FLUSH request emits a markdown newsletter draft (request_node digest FLUSH).',
-			'arguments'    => [],
+			'arguments'    => [
+				[
+					'name'        => 'scored_partition',
+					'description' => 'Scored Partition node to nudge on FLUSH so the consumer persists the emptied snapshot.',
+				],
+			],
 			'requests'     => [
 				[
 					'name'        => 'FLUSH',

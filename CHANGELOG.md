@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Digest no longer reloads a stale, ever-growing items list after a worker restart.** On FLUSH the `Digest_Builder` empties its accumulated items, but `scored:consumer`'s cursor didn't move, so its checkpoint (which only writes the offsetlog when the cursor advances) never co-committed the emptied snapshot — a restarted worker reloaded the full pre-FLUSH list and appended new items to it forever. The digest now takes the scored Partition as an argument (`make_node Digest_Builder digest scored:partition`) and, on FLUSH, sends it a throwaway `.` message that advances the consumer so its next checkpoint persists the emptied snapshot (the `.` is ignored downstream). The `Digest_Builder` also **dedupes accumulated items by id** (cleared each FLUSH; a dirty restored snapshot is deduped too), so the same item can't appear twice in a digest.
+
 ### Changed
 
 - **The main topology now runs the real connectors, not the stub.** `topologies/newspack-ai-newsletter.tsl` replaces the single `Stub_Source` head with the three live connectors (`github`, `linear`, `feed`) fanned into the summarizer. They emit nothing until configured (`github_repos`/`github_token`, `linear_token`, `feeds`); trigger a source with `request_node <source> TICK` and the digest with `request_node digest FLUSH`. `Stub_Source_Node` remains as a no-deps demo source (still in the catalog), just no longer wired by default.
