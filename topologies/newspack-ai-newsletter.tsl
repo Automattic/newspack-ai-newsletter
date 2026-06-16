@@ -1,19 +1,26 @@
-# AI Newsletter — scored, durable digest pipeline (stub-source skeleton).
+# AI Newsletter — scored, durable digest pipeline.
 #
-#   source ─ summarizer ─ scorer ─ scored:partition      (durable `scored` log)
+#   github ┐
+#   linear ┼─ summarizer ─ scorer ─ scored:partition      (durable `scored` log)
+#   feed   ┘
 #   scored:consumer ─ digest ─ digest:tee ─ digest:log
 #
-# The stub source emits a canned batch on `tick`; summarizer adds a one-line
-# summary; scorer adds a notional priority score and appends each scored item to
-# the durable `scored` partition. A Consumer tails that log into the digest, and
-# co-commits the digest's accumulated state (save_state) into its offsetlog via
-# `set_snapshot_node digest` — so a respawned worker restores in lockstep with the
-# cursor. Insights_CI reads that offsetlog snapshot to serve the dashboard.
-# `void_warranty` lifts the partition's 4KB write cap (a scored batch can exceed
-# PIPE_BUF); see ADR-4.
+# The three connector sources (GitHub, Linear, RSS/Atom feeds) each emit normalized
+# items on a `TICK` request (`request_node <source> TICK`); summarizer adds a one-line
+# summary; scorer adds a priority score and appends each scored item to the durable
+# `scored` partition. A Consumer tails that log into the digest, and co-commits the
+# digest's accumulated state (save_state) into its offsetlog via `set_snapshot_node
+# digest` — so a respawned worker restores in lockstep with the cursor. Insights_CI
+# reads that offsetlog snapshot to serve the dashboard. `void_warranty` lifts the
+# partition's 4KB write cap (a scored batch can exceed PIPE_BUF); see ADR-4.
+#
+# Connectors emit nothing until configured (github_repos/github_token, linear_token,
+# feeds in settings). FLUSH the digest with `request_node digest FLUSH`.
 var num_partitions = 1
 
-make_node Stub_Source    source
+make_node Github_Source  github
+make_node Linear_Source  linear
+make_node Feed_Source    feed
 make_node Summarizer     summarizer
 make_node Scorer         scorer
 make_node Partition      scored:partition <config:logs_dir>/scored.p<partition> <config:segment_size> <config:num_segments> <config:max_lifespan>
@@ -24,7 +31,9 @@ make_node Digest_Builder digest
 make_node Tee            digest:tee
 make_node Log            digest:log /tmp/newspack-ai-newsletter/digest.md 1 7
 cmd digest:log:config void_warranty
-connect_node source          summarizer
+connect_node github          summarizer
+connect_node linear          summarizer
+connect_node feed            summarizer
 connect_node summarizer      scorer
 connect_node scorer          scored:partition
 connect_node scored:consumer digest

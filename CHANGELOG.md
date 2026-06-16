@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The main topology now runs the real connectors, not the stub.** `topologies/newspack-ai-newsletter.tsl` replaces the single `Stub_Source` head with the three live connectors (`github`, `linear`, `feed`) fanned into the summarizer. They emit nothing until configured (`github_repos`/`github_token`, `linear_token`, `feeds`); trigger a source with `request_node <source> TICK` and the digest with `request_node digest FLUSH`. `Stub_Source_Node` remains as a no-deps demo source (still in the catalog), just no longer wired by default.
 - **Runtime triggers are now fire-and-forget `TM_REQUEST`s, not `TM_COMMAND` verbs.**
   The source's `tick` and the digest's `flush` were dispatched as `TM_COMMAND` verbs
   through a sibling `{node}:config` interpreter (`Schema_Reflection` +
