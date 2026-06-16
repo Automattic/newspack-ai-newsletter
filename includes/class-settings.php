@@ -118,13 +118,26 @@ class Settings {
 		};
 	}
 
-	/** Render an array_strings setting as a one-entry-per-line textarea. */
-	private static function list_render( string $key ): \Closure {
-		return static function () use ( $key ): void {
+	/** Render an array_strings setting as a one-entry-per-line textarea (fixed width). */
+	private static function list_render( string $key, int $rows = 14 ): \Closure {
+		return static function () use ( $key, $rows ): void {
 			\printf(
-				'<textarea name="%s" rows="4" class="large-text code">%s</textarea>',
+				'<textarea name="%s" rows="%s" cols="60" class="code">%s</textarea>',
 				\esc_attr( self::PREFIX . $key ),
+				\esc_attr( (string) $rows ),
 				\esc_textarea( \implode( "\n", self::get_array( $key ) ) )
+			);
+		};
+	}
+
+	/** Render a multi-line text setting (a scalar string) as a fixed-width textarea. */
+	private static function string_textarea_render( string $key, int $rows = 5 ): \Closure {
+		return static function () use ( $key, $rows ): void {
+			\printf(
+				'<textarea name="%s" rows="%s" cols="60">%s</textarea>',
+				\esc_attr( self::PREFIX . $key ),
+				\esc_attr( (string) $rows ),
+				\esc_textarea( self::get_string( $key ) )
 			);
 		};
 	}
@@ -132,6 +145,11 @@ class Settings {
 	/** Sanitize a single text/secret value (trim + strip tags). */
 	private static function text_sanitize(): \Closure {
 		return static fn ( $value ): string => \sanitize_text_field( \is_scalar( $value ) ? (string) $value : '' );
+	}
+
+	/** Sanitize a multi-line text value: strip tags but PRESERVE newlines. */
+	private static function textarea_sanitize(): \Closure {
+		return static fn ( $value ): string => \sanitize_textarea_field( \is_scalar( $value ) ? (string) $value : '' );
 	}
 
 	/** Sanitize an array_strings value: a textarea (or array) → trimmed, non-empty list. */
@@ -253,8 +271,8 @@ class Settings {
 					type: 'text',
 					label: static fn(): string => \__( 'Relevance Profile', 'newspack-ai-newsletter' ),
 					section: self::DIGEST_SECTION,
-					sanitize: self::text_sanitize(),
-					render: self::text_render( 'relevance_profile' ),
+					sanitize: self::textarea_sanitize(),
+					render: self::string_textarea_render( 'relevance_profile' ),
 					delete_on_blank: false,
 				),
 			],

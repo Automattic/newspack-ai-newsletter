@@ -140,6 +140,19 @@ if ( ! function_exists( 'sanitize_text_field' ) ) {
 	}
 }
 
+if ( ! function_exists( 'sanitize_textarea_field' ) ) {
+	function sanitize_textarea_field( mixed $v ): string {
+		if ( ! is_string( $v ) ) {
+			return '';
+		}
+		// Like sanitize_text_field but PRESERVES newlines (strip tags + control
+		// chars except \n, trim).
+		$v = \strip_tags( $v );
+		$v = \preg_replace( '/[\x00-\x09\x0B-\x1F\x7F]/', '', $v ) ?? $v;
+		return \trim( $v );
+	}
+}
+
 if ( ! function_exists( 'get_current_user_id' ) ) {
 	function get_current_user_id(): int {
 		return (int) ( $GLOBALS['_current_user_id'] ?? 0 );

@@ -119,4 +119,12 @@ final class SettingsTest extends TestCase {
 		$sanitize = $this->by_key()['feeds']->sanitize;
 		$this->assertSame( [ 'https://a.test/feed' ], $sanitize( [ 'https://a.test/feed', '' ] ) );
 	}
+
+	public function test_relevance_profile_sanitize_preserves_newlines(): void {
+		// It's a multi-line textarea: paragraphs must survive (sanitize_textarea_field),
+		// unlike the single-line text_sanitize which would collapse them.
+		$sanitize = $this->by_key()['relevance_profile']->sanitize;
+		$this->assertSame( "Line one.\nLine two.", $sanitize( "Line one.\nLine two." ) );
+		$this->assertSame( 'no tags', $sanitize( 'no <b>tags</b>' ) );
+	}
 }
