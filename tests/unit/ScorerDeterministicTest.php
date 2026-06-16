@@ -54,13 +54,13 @@ final class ScorerDeterministicTest extends TestCase {
 		$node = new Scorer_Node();
 		$node->sink( $sink );
 
-		$m                  = Message::new_message();
-		$m[ Message::TYPE ] = Message::TM_INFO;
-		$m[ Message::KEY ]  = 'DONE';
+		$m                   = Message::new_message();
+		$m[ Message::TYPE ]  = Message::TM_INFO;
+		$m[ Message::VALUE ] = 'DONE';
 		$node->fill( $m );
 
 		$this->assertCount( 1, $sink->captured );
-		$this->assertSame( 'DONE', $sink->captured[0][ Message::KEY ] );
+		$this->assertSame( 'DONE', $sink->captured[0][ Message::VALUE ] );
 		$this->assertSame( Message::TM_INFO, $sink->captured[0][ Message::TYPE ] & Message::TM_INFO );
 	}
 }

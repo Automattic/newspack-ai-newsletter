@@ -120,12 +120,12 @@ final class DigestBuilderStateTest extends TestCase {
 		$this->assertSame( 'scored:partition', $node->arguments() );
 	}
 
-	/** Fire a TM_INFO DONE (what a source emits at the end of a TICK; VALUE = its name). */
+	/** Fire a TM_INFO DONE (what a source emits at the end of a TICK; FROM = its name, VALUE = DONE). */
 	private function done( Digest_Builder_Node $n, string $source = 'github' ): void {
 		$m                   = Message::new_message();
 		$m[ Message::TYPE ]  = Message::TM_INFO;
-		$m[ Message::KEY ]   = 'DONE';
-		$m[ Message::VALUE ] = $source;
+		$m[ Message::FROM ]  = $source;
+		$m[ Message::VALUE ] = 'DONE';
 		$n->fill( $m );
 	}
 

@@ -80,13 +80,12 @@ abstract class Source_Node extends Node implements Source {
 				parent::fill( $response );
 			}
 		} finally {
-			// DONE always fires — even if fetch() throws — so one failing source
-			// can't stall the dashboard's collection progress at X/total forever.
+			// DONE always fires (even if fetch() throws) so one failing source can't stall collection progress.
+			// FROM (the source name, breadcrumbed downstream) is the digest's distinct-source key; VALUE is the marker.
 			$done                   = Message::new_message();
 			$done[ Message::TYPE ]  = Message::TM_INFO;
-			$done[ Message::KEY ]   = 'DONE';
 			$done[ Message::FROM ]  = $this->name;
-			$done[ Message::VALUE ] = $this->name;
+			$done[ Message::VALUE ] = 'DONE';
 			parent::fill( $done );
 		}
 	}

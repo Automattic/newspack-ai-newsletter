@@ -55,14 +55,12 @@ class Digest_Builder_Node extends Node {
 			$this->handle_request( $message );
 			return;
 		}
-		// A source's DONE (TM_INFO) advances collection progress (X/total). The
-		// VALUE carries the source name; recording it by name dedups re-ticks and
-		// replays so the count tracks distinct sources, not raw signals.
+		// A source's DONE (TM_INFO VALUE=DONE); keyed by FROM (distinct + stable per source) so re-ticks/replays count distinct sources.
 		if ( $type & Message::TM_INFO ) {
-			$key = \is_string( $message[ Message::KEY ] ?? null ) ? $message[ Message::KEY ] : '';
-			if ( 'DONE' === $key ) {
-				$source                    = \is_string( $message[ Message::VALUE ] ?? null ) ? $message[ Message::VALUE ] : '';
-				$this->reported[ $source ] = true;
+			$value = \is_string( $message[ Message::VALUE ] ?? null ) ? $message[ Message::VALUE ] : '';
+			if ( 'DONE' === $value ) {
+				$from                    = \is_string( $message[ Message::FROM ] ?? null ) ? $message[ Message::FROM ] : '';
+				$this->reported[ $from ] = true;
 			}
 			return;
 		}
