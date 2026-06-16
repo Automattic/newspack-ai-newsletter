@@ -298,30 +298,28 @@ $font: 'Inter', -apple-system, blinkmacsystemfont, 'Segoe UI', roboto, sans-seri
 		}
 	}
 
-	// --- Rendered preview: a styled list, not a raw-markdown textarea ---
+	// --- Digest preview: the rendered markdown the publisher copies/drafts.
+	// pre-wrap + overflow-wrap so long lines and bare URLs wrap inside the card
+	// instead of overflowing; capped height with its own scroll.
 	&__preview {
 		margin: 16px 0 0;
-		padding: 0;
-		list-style: none;
+		padding: 12px 14px;
+		max-height: 460px;
+		overflow: auto;
 		border: 1px solid $border;
 		border-radius: 8px;
-
-		li {
-			display: flex;
-			justify-content: space-between;
-			gap: 16px;
-			padding: 8px 12px;
-			font-size: 14px;
-			border-bottom: 1px solid $border;
-
-			&:last-child {
-				border-bottom: 0;
-			}
-		}
+		background: $surface-subtle;
+		color: $text;
+		font-family: ui-monospace, sfmono-regular, menlo, consolas, monospace;
+		font-size: 13px;
+		line-height: 1.5;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 
-	&__preview-source {
-		text-transform: capitalize;
+	&__preview-empty {
+		margin: 16px 0 0;
 		color: $text-secondary;
+		font-size: 14px;
 	}
 }
